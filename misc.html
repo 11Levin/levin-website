@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Misc - Levin Wu</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      background: #f4f4f4;
+      color: #333;
+    }
+    .container {
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 1.5rem;
+      background: #fff;
+      border-radius: 8px;
+    }
+    a {
+      color: #0a9396;
+    }
+    .art-gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .artwork {
+      margin: 0;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .artwork img {
+      display: block;
+      width: 100%;
+      height: 300px;
+      object-fit: contain;
+      background: #fff;
+      border-radius: 4px;
+    }
+    .artwork figcaption {
+      padding: 0.75rem 0.25rem 0.25rem;
+      font-weight: bold;
+    }
+    @media (max-width: 700px) {
+      .art-gallery {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>Miscellaneous</h1>
+    </header>
+
+    <main>
+      <p>Alongside software and professional work, I enjoy exploring data through questions that connect statistics with familiar subjects.</p>
+      <p>My R analysis projects include studying patterns in Scooby-Doo episodes and modeling juvenile crime trends with historical data and lagged variables.</p>
+
+      <section>
+        <h2>Adobe Artwork</h2>
+        <p>A selection of visual design work created in Adobe tools, including identity concepts, illustration, poster design, and polygonal art.</p>
+        <div class="art-gallery">
+          <figure class="artwork">
+            <img src="media/Wu_Family_Crest.png" alt="Colorful geometric family crest design">
+            <figcaption>Family Crest</figcaption>
+          </figure>
+          <figure class="artwork">
+            <img src="media/Wu_Geometric_Garden.png" alt="Illustrated geometric garden landscape with rabbits and floating figures">
+            <figcaption>Geometric Garden</figcaption>
+          </figure>
+          <figure class="artwork">
+            <img src="media/Wu_MovieParody%20(1).png" alt="Blue movie poster parody featuring Levin Wu">
+            <figcaption>Movie Poster Parody</figcaption>
+          </figure>
+          <figure class="artwork">
+            <img src="media/Wu_Personal_Logo.png" alt="Personal logo and letterform design studies">
+            <figcaption>Personal Logo Studies</figcaption>
+          </figure>
+          <figure class="artwork">
+            <img src="media/Wu_Polygonal_Animal.png" alt="Low-poly white and blue animal illustration">
+            <figcaption>Polygonal Animal</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <p><a href="LevinWebsite.html">← Back to Home</a></p>
+    </main>
+  </div>
+
+</body>
+</html>

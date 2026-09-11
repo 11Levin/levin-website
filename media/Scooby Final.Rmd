@@ -1,0 +1,573 @@
+---
+title: "Final Project"
+output: html_document
+date: "2025-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(modelr)
+library(purrr)
+library(tidyverse)
+library(Ecdat)
+library(broom)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+crime = read.csv("jar_2020.csv")
+crime
+national_crime = read.csv("national_crime_rate_1990_2021.csv")
+nc_clean = national_crime
+nc_clean
+crime_bind = inner_join(crime,nc_clean,by = "Year")
+# Read the CSV file
+data = read.csv("Scooby-Doo Complete - Episode List - Update 10 19 21.csv", stringsAsFactors = FALSE)
+
+# Convert numeric columns to double
+numeric_cols = c("index","imdb", "engagement", "season", "run.time", "suspects.amount", "culprit.amount", "number.of.snacks", "split.up",                 "another.mystery", "set.a.trap", "jeepers" ,"jinkies", "my.glasses", "just.about.wrapped.up","zoinks",                                  "groovy","scooby.doo.where.are.you", "rooby.rooby.roo" )
+data[numeric_cols] = lapply(data[numeric_cols], as.numeric)
+
+# Convert Boolean columns to logical
+boolean_cols = c("caught.fred", "caught.daphne", "caught.velma", "caught.shaggy", "caught.scooby",
+                  "captured.fred", "captured.daphne", "captured.velma", "captured.shaggy", "captured.scooby",
+                  "unmask.fred", "unmask.daphne", "unmask.velma", "unmask.shaggy", "unmask.scooby",
+                  "snack.fred", "snack.daphne", "snack.velma", "snack.shaggy", "snack.scooby",
+                  "unmask.other", "caught.other", "caught.not", "trap.work.first",
+                  "batman", "scooby.dum", "scrappy.doo", "hex.girls", "blue.falcon",
+                  "non.suspect", "arrested", "monster.real")
+
+data[boolean_cols] = lapply(boolean_cols, function(col) as.logical(tolower(data[[col]]) == "true"))
+
+# Convert categorical variables to factors
+categorical_cols= c( "network", "title", "format", "monster.name", "monster.gender",
+                       "monster.subtype", "monster.species",
+                      "setting.country.state", "culprit.name", "culprit.gender", "motive",
+                      "if.it.wasnt.for", "and.that", "fred.va", "daphne.va", "velma.va",
+                      "shaggy.va", "scooby.va")
+data[categorical_cols] = lapply(data[categorical_cols], as.factor)
+
+data = data %>% mutate("imdb_engagement" = 1/engagement * .5 + ((engagement - 1)/engagement) * imdb,date.aired = as.Date(date.aired,"%m/%d/%Y") ) 
+
+# Remove rows with NA in imdb or any predictor
+data
+```
+
+```{r}
+crime = read.csv("jar_2020.csv")
+crime
+crime_clean = crime %>% select(Year,All.crimes,Robbery,Burglary) %>%
+  mutate(
+    Robbery_lag = lag(Robbery),
+    Burglary_lag = lag(Burglary),
+    crimes_lag = lag(All.crimes)
+  ) 
+
+crime_clean_table = crime_clean %>% rename("Overall Juvenile Crime Rate" = All.crimes, "Burglary Rates" = Burglary, "Robbery Rates" = Robbery, "Lagged Overall Juvenile Crime Rate" = crimes_lag,"Lagged Burglary Rates" = Burglary_lag, "Lagged Robbery Rates" = Robbery_lag )
+library(knitr)
+kable(crime_clean_table, format = "html", caption = "Juvenile Crime Data with Lagged Variables")
+crime_clean_table
+
+crime_clean_model <- crime_clean %>% drop_na()
+
+crime_clean_model
+
+# Fit the model
+model_lagged1 <- lm(Burglary ~ Robbery_lag + Burglary_lag+crimes_lag, data = crime_clean_model)
+model_lagged2 <- lm(Burglary ~ Robbery_lag + Burglary_lag, data = crime_clean_model)
+model_lagged3 <- lm(Burglary ~ Burglary_lag, data = crime_clean_model)
+
+# Make predictions
+crime_clean_model$Predicted <- predict(model_lagged)
+
+# Plot actual vs predicted All.crimes
+ggplot(crime_clean_model, aes(x = Year)) +
+  geom_line(aes(y = Burglary, color = "Actual")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  labs(
+    title = "Actual vs Predicted Juvenile All Crimes",
+    y = "Arrest Rate per 100,000",
+    color = ""
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+  theme_minimal()
+```
+
+
+```{r}
+library(tidyverse)
+
+# Step 1: Prepare dataset with lag variables
+crime_clean <- crime %>%
+  select(Year, All.crimes, Robbery, Burglary) %>%
+  mutate(
+    Robbery_lag = lag(Robbery),
+    Burglary_lag = lag(Burglary),
+    crimes_lag = lag(All.crimes)
+  ) %>%
+  drop_na()
+
+# Step 2: Base R 80/20 train-test split
+set.seed(123)  # for reproducibility
+n <- nrow(crime_clean)
+train_indices <- sample(seq_len(n), size = 0.8 * n)
+train_data <- crime_clean[train_indices, ]
+test_data <- crime_clean[-train_indices, ]
+
+# Step 3: Fit models on training data
+# Linear models
+model_lagged1 <- lm(Burglary ~ Robbery_lag + Burglary_lag + crimes_lag, data = train_data)
+model_lagged2 <- lm(Burglary ~ Robbery_lag + Burglary_lag, data = train_data)
+model_lagged3 <- lm(Burglary ~ Burglary_lag, data = train_data)
+
+# Log-transformed models
+log_model1 <- lm(log(Burglary) ~ Robbery_lag + Burglary_lag + crimes_lag, data = train_data)
+log_model2 <- lm(log(Burglary) ~ Robbery_lag + Burglary_lag, data = train_data)
+log_model3 <- lm(log(Burglary) ~ Burglary_lag, data = train_data)
+
+# Polynomial models (degree 2)
+poly_model1 <- lm(Burglary ~ Robbery_lag + Burglary_lag + poly(crimes_lag, 3, raw=TRUE), data = train_data)
+poly_model2 <- lm(Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + Burglary_lag + poly(crimes_lag, 3, raw=TRUE), data = train_data)
+poly_model3 <- lm(Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + poly(Burglary_lag, 2, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE), data = train_data)
+# Predict on test set
+test_data <- test_data %>%
+  mutate(
+    Pred_poly1 = predict(poly_model1, newdata = .),
+    Pred_poly2 = predict(poly_model2, newdata = .),
+    Pred_poly3 = predict(poly_model3, newdata = .)
+  )
+
+# Step 4: Make predictions on test set
+test_data <- test_data %>%
+  mutate(
+    Actual = Burglary,
+    Predicted1 = predict(model_lagged1, newdata = .),
+    Predicted2 = predict(model_lagged2, newdata = .),
+    Predicted3 = predict(model_lagged3, newdata = .),
+    Pred_log1 = exp(predict(log_model1, newdata = .)),
+    Pred_log2 = exp(predict(log_model2, newdata = .)),
+    Pred_log3 = exp(predict(log_model3, newdata = .))
+  )
+
+plot_data <- test_data %>%
+  select(Year, Actual, Predicted1, Predicted2, Predicted3,
+         Pred_log1, Pred_log2, Pred_log3,
+         Pred_poly1, Pred_poly2, Pred_poly3) %>%
+  pivot_longer(cols = -Year, names_to = "Model", values_to = "Burglary")
+
+# Update color scale
+ggplot(plot_data, aes(x = Year, y = Burglary, color = Model, linetype = Model)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Test Set: Actual vs Predicted Burglary (Linear, Log, Poly Models)",
+    y = "Burglary Rate per 100,000",
+    color = "Model",
+    linetype = "Model"
+  ) +
+  scale_color_manual(values = c(
+    "Actual" = "black",
+    "Predicted1" = "red",
+    "Predicted2" = "blue",
+    "Predicted3" = "green",
+    "Pred_log1" = "orange",
+    "Pred_log2" = "purple",
+    "Pred_log3" = "brown",
+    "Pred_poly1" = "pink",
+    "Pred_poly2" = "darkcyan",
+    "Pred_poly3" = "goldenrod"
+  )) +
+  theme_minimal()
+# RMSE Function
+rmse_func <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+# Compute RMSE
+rmse_results <- tibble(
+  Model = c("lm1", "lm2", "lm3", "log1", "log2", "log3"),
+  RMSE = c(
+    rmse_func(test_data$Actual, test_data$Predicted1),
+    rmse_func(test_data$Actual, test_data$Predicted2),
+    rmse_func(test_data$Actual, test_data$Predicted3),
+    rmse_func(test_data$Actual, test_data$Pred_log1),
+    rmse_func(test_data$Actual, test_data$Pred_log2),
+    rmse_func(test_data$Actual, test_data$Pred_log3)
+  )
+)
+rmse_results <- rmse_results %>%
+  add_row(
+    Model = c("poly1", "poly2", "poly3"),
+    RMSE = c(
+      rmse_func(test_data$Actual, test_data$Pred_poly1),
+      rmse_func(test_data$Actual, test_data$Pred_poly2),
+      rmse_func(test_data$Actual, test_data$Pred_poly3)
+    )
+  )
+
+print(rmse_results)
+
+print(rmse_results)
+
+```
+
+```{r}
+# Fit to full dataset (not just training set)
+full_lm1 <- lm(Burglary ~ Robbery_lag + Burglary_lag + crimes_lag, data = crime_clean)
+full_lm2 <- lm(Burglary ~ Robbery_lag + Burglary_lag, data = crime_clean)
+full_lm3 <- lm(Burglary ~ Burglary_lag, data = crime_clean)
+
+full_log1 <- lm(log(Burglary) ~ Robbery_lag + Burglary_lag + crimes_lag, data = crime_clean)
+full_log2 <- lm(log(Burglary) ~ Robbery_lag + Burglary_lag, data = crime_clean)
+full_log3 <- lm(log(Burglary) ~ Burglary_lag, data = crime_clean)
+
+full_poly1 <- lm(Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE), data = crime_clean)
+full_poly2 <- lm(Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE), data = crime_clean)
+full_poly3 <- lm(Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + poly(Burglary_lag, 2, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE), data = crime_clean)
+
+crime_full_plot <- crime_clean %>%
+  mutate(
+    Actual = Burglary,
+    lm1 = predict(full_lm1, newdata = .),
+    lm2 = predict(full_lm2, newdata = .),
+    lm3 = predict(full_lm3, newdata = .),
+    log1 = exp(predict(full_log1, newdata = .)),
+    log2 = exp(predict(full_log2, newdata = .)),
+    log3 = exp(predict(full_log3, newdata = .)),
+    poly1 = predict(full_poly1, newdata = .),
+    poly2 = predict(full_poly2, newdata = .),
+    poly3 = predict(full_poly3, newdata = .)
+  ) %>%
+  select(Year, Actual, lm1, lm2, lm3, log1, log2, log3, poly1, poly2, poly3) %>%
+  pivot_longer(-Year, names_to = "Model", values_to = "Burglary")
+
+ggplot(crime_full_plot, aes(x = Year, y = Burglary, color = Model, linetype = Model)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Full Dataset: Actual vs Predicted Burglary (Linear, Log, Polynomial Models)",
+    y = "Burglary Rate per 100,000",
+    color = "Model",
+    linetype = "Model"
+  ) +
+  scale_color_manual(values = c(
+    "Actual" = "black",
+    "lm1" = "red",
+    "lm2" = "blue",
+    "lm3" = "green",
+    "log1" = "orange",
+    "log2" = "purple",
+    "log3" = "brown",
+    "poly1" = "pink",
+    "poly2" = "darkcyan",
+    "poly3" = "goldenrod"
+  )) +
+  theme_minimal()
+
+rmse_full <- tibble(
+  Model = c("lm1", "lm2", "lm3", "log1", "log2", "log3", "poly1", "poly2", "poly3"),
+  RMSE = c(
+    rmse_func(crime_clean$Burglary, predict(full_lm1, newdata = crime_clean)),
+    rmse_func(crime_clean$Burglary, predict(full_lm2, newdata = crime_clean)),
+    rmse_func(crime_clean$Burglary, predict(full_lm3, newdata = crime_clean)),
+    rmse_func(crime_clean$Burglary, exp(predict(full_log1, newdata = crime_clean))),
+    rmse_func(crime_clean$Burglary, exp(predict(full_log2, newdata = crime_clean))),
+    rmse_func(crime_clean$Burglary, exp(predict(full_log3, newdata = crime_clean))),
+    rmse_func(crime_clean$Burglary, predict(full_poly1, newdata = crime_clean)),
+    rmse_func(crime_clean$Burglary, predict(full_poly2, newdata = crime_clean)),
+    rmse_func(crime_clean$Burglary, predict(full_poly3, newdata = crime_clean))
+  )
+)
+
+print(rmse_full)
+
+
+```
+
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(broom)
+
+# 1. Create 5-fold cross-validation sets
+set.seed(42)
+cv_folds <- crossv_kfold(crime_clean, k = 5)
+
+# 2. Define model formulas
+formulas <- tibble(
+  model_name = c("lm1", "lm2", "poly1", "poly2", "poly3"),
+  formula = list(
+    Burglary ~ Robbery_lag + Burglary_lag + crimes_lag,
+    Burglary ~ Robbery_lag + Burglary_lag,
+    Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE),
+    Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE),
+    Burglary ~ poly(Robbery_lag, 2, raw=TRUE) + poly(Burglary_lag, 2, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE)
+  )
+)
+# Expand folds and formulas into all combinations
+cv_grid <- crossing(cv_folds, formulas)
+
+# Fit model, make predictions, calculate RMSE
+cv_results <- cv_grid %>%
+  mutate(
+    train = map(train, as_tibble),
+    test  = map(test, as_tibble),
+    
+    model = map2(train, formula, ~lm(.y, data = .x)),
+    preds = map2(model, test, ~predict(.x, newdata = .y)),
+    rmse  = map2_dbl(test, preds, ~sqrt(mean((.x$Burglary - .y)^2, na.rm = TRUE)))
+  )
+cv_summary <- cv_results %>%
+  group_by(model_name) %>%
+  summarise(mean_rmse = mean(rmse), .groups = "drop") %>%
+  arrange(mean_rmse)
+
+print(cv_summary)
+ggplot(cv_summary, aes(x = reorder(model_name, mean_rmse), y = mean_rmse)) +
+  geom_col(fill = "steelblue",) +
+  labs(title = "5-Fold CV RMSE for Selected Models",
+       x = "Model",
+       y = "Mean RMSE") +
+  theme_minimal()
+
+```
+
+
+
+
+```{r}
+data_clean = data %>% select(date.aired,motive,arrested,culprit.gender,culprit.amount,network) %>% mutate(Year = year(date.aired),motive = fct_collapse(
+      motive,
+      Stealing = c("Natural Resource", "Treasure", "Theft", "Inheritance")
+    ),
+    # Then lump all other motives (not "Stealing") into "Other"
+    motive = fct_other(motive, keep = "Stealing", other_level = "Other")) 
+data_clean_motive = data_clean%>% group_by(Year,motive) %>% summarise(culprit_total = sum(culprit.amount)) %>% ungroup()
+
+all_years <- seq(min(data_clean$Year), max(data_clean$Year))
+
+data_clean_motive_filled = data_clean_motive %>%
+  complete(
+    Year = all_years,
+    motive,
+    fill = list(culprit_total = 0)
+  ) %>%
+  pivot_wider(
+    names_from = motive,
+    values_from = culprit_total,
+    values_fill = list(culprit_total = 0)
+  ) %>%
+  mutate(
+    total = Stealing + Other,
+    percent_stealing = if_else(total > 0, (Stealing / total) * 100, 0)
+  ) %>%
+  select(Year, percent_stealing) %>% ungroup()
+
+
+data_clean_motive_filled
+dcm = data_clean_motive_filled[11:52,]
+dcm
+```
+
+```{r}
+data_clean = data %>% select(date.aired,arrested,culprit.amount,network)%>% mutate(Year = year(date.aired))
+data_clean_arrest = data_clean%>% group_by(Year,arrested) %>% summarise(culprit_total = sum(culprit.amount)) %>% ungroup()
+
+data_filled <- data_clean_arrest %>%
+  complete(
+    Year = all_years,
+    arrested,
+    fill = list(culprit_total = 0)
+  )
+
+# Pivot wider: separate arrested TRUE and FALSE columns
+data_clean_arrest_filled <- data_filled %>%
+  pivot_wider(
+    names_from = arrested,
+    values_from = culprit_total,
+    values_fill = list(culprit_total = 0)
+  ) %>%
+  rename(
+    arrested_false = `FALSE`,
+    arrested_true = `TRUE`
+  ) %>%
+  mutate(
+    total = arrested_false + arrested_true,
+    percent_arrested = if_else(total > 0, (arrested_true / total) * 100, 0)
+  ) %>%
+  select(Year, percent_arrested)
+
+
+dca = data_clean_arrest_filled[12:52,]
+dca
+scooby_factors = inner_join(dcm,dca, by = "Year") %>% mutate(arrest_lag = lag(percent_arrested),stealing_lag = lag(percent_stealing))
+scooby_factors
+
+crime_scooby = inner_join(scooby_factors,crime_clean_model,by = "Year")
+
+crime_scooby
+```
+
+```{r}
+formulas <- list(
+  model1 = Burglary ~ Robbery_lag + Burglary_lag,
+  model2 = Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE),
+  model3 = Burglary ~ Robbery_lag + Burglary_lag + arrest_lag + stealing_lag,
+  model4 = Burglary ~ Robbery_lag + Burglary_lag + stealing_lag,
+  model5 = Burglary ~ Robbery_lag + Burglary_lag + arrest_lag,
+  model6 = Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(arrest_lag, 2, raw=TRUE) + poly(stealing_lag, 2, raw=TRUE),
+  model7 = Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(arrest_lag, 2, raw=TRUE),
+  model8 = Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(stealing_lag, 2, raw=TRUE)
+)
+set.seed(123)
+n <- nrow(crime_scooby)
+train_idx <- sample(seq_len(n), size = 0.8 * n)
+train_data <- crime_scooby[train_idx, ]
+test_data <- crime_scooby[-train_idx, ]
+models_fitted <- map(formulas, ~lm(.x, data = train_data))
+
+test_preds <- map(models_fitted, ~predict(.x, newdata = test_data))
+plot_df <- test_data %>%
+  select(Year, Burglary) %>%
+  mutate(Actual = Burglary) %>%
+  bind_cols(as_tibble(test_preds)) %>%
+  rename_with(~names(formulas), -c(Year, Burglary, Actual)) %>%
+  pivot_longer(cols = all_of(names(formulas)), names_to = "Model", values_to = "Predicted")
+ggplot(plot_df, aes(x = Year)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +
+  geom_line(aes(y = Predicted, color = Model), linetype = "dashed", size = 0.8) +
+  labs(title = "Test Set: Actual vs Predicted Burglary by Model",
+       y = "Burglary Rate per 100,000",
+       color = "Legend") +
+  scale_color_manual(values = c("Actual" = "black",
+                                "model1" = "red",
+                                "model2" = "blue",
+                                "model3" = "green",
+                                "model4" = "purple",
+                                "model5" = "orange",
+                                "model6" = "brown",
+                                "model7" = "pink",
+                                "model8" = "darkcyan")) +
+  theme_minimal()
+rmse_func <- function(actual, predicted) sqrt(mean((actual - predicted)^2, na.rm = TRUE))
+
+rmse_results <- map_dbl(test_preds, ~rmse_func(test_data$Burglary, .x))
+
+rmse_table <- tibble(
+  Model = names(formulas),
+  RMSE = rmse_results
+)
+
+print(rmse_table)
+```
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(broom)
+
+# 1. Create 5-fold CV splits
+set.seed(121)
+cv_folds <- crossv_kfold(crime_scooby, k = 5)
+
+# 2. Define your 8 formulas in a tibble
+formulas <- tibble(
+  model_name = c("model1", "model2", "model3", "model4", "model5", "model6", "model7", "model8"),
+  formula = list(
+    Burglary ~ Robbery_lag + Burglary_lag,
+    Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE),
+    Burglary ~ Robbery_lag + Burglary_lag + arrest_lag + stealing_lag,
+    Burglary ~ Robbery_lag + Burglary_lag + stealing_lag,
+    Burglary ~ Robbery_lag + Burglary_lag + arrest_lag,
+    Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(arrest_lag, 2, raw=TRUE) + poly(stealing_lag, 2, raw=TRUE),
+    Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(arrest_lag, 2, raw=TRUE),
+    Burglary ~ poly(Robbery_lag, 1, raw=TRUE) + poly(Burglary_lag, 1, raw=TRUE) + poly(crimes_lag, 3, raw=TRUE) + poly(stealing_lag, 2, raw=TRUE)
+  )
+)
+
+# 3. Cross join folds with formulas
+cv_grid <- crossing(cv_folds, formulas)
+
+# 4. Nest train and test sets
+cv_grid <- cv_grid %>%
+  mutate(
+    train_data = map(train, as_tibble),
+    test_data  = map(test, as_tibble)
+  )
+
+# 5. Fit models on train, predict on test, calculate RMSE
+cv_grid <- cv_grid %>%
+  mutate(
+    model = map2(train_data, formula, ~lm(.y, data = .x)),
+    preds = map2(model, test_data, ~predict(.x, newdata = .y)),
+    rmse = map2_dbl(test_data, preds, ~sqrt(mean((.x$Burglary - .y)^2, na.rm = TRUE)))
+  )
+
+# 6. Summarize mean RMSE by model
+cv_summary <- cv_grid %>%
+  group_by(model_name) %>%
+  summarise(mean_rmse = mean(rmse), sd_rmse = sd(rmse), .groups = "drop") %>%
+  arrange(mean_rmse)
+
+print(cv_summary)
+ggplot(cv_summary, aes(x = reorder(model_name, mean_rmse), y = mean_rmse)) +
+  geom_col(fill = "steelblue") +
+  geom_errorbar(aes(ymin = mean_rmse - sd_rmse, ymax = mean_rmse + sd_rmse), width = 0.2) +
+  labs(title = "5-Fold CV RMSE for Models",
+       x = "Model",
+       y = "Mean RMSE ± SD") +
+  theme_minimal()
+
+```
+
+```{r}
+model_simple <- lm(Burglary ~ Robbery_lag + Burglary_lag, data = crime_scooby)
+
+model_poly <- lm(Burglary ~ 
+                   poly(Robbery_lag, 1, raw=TRUE) + 
+                   poly(Burglary_lag, 1, raw=TRUE) + 
+                   poly(crimes_lag, 3, raw=TRUE) + 
+                   poly(arrest_lag, 2, raw=TRUE) + 
+                   poly(stealing_lag, 2, raw=TRUE), data = crime_scooby)
+crime_scooby_preds <- crime_scooby %>%
+  mutate(
+    Actual = Burglary,
+    Pred_Simple = predict(model_simple, newdata = .),
+    Pred_Poly = predict(model_poly, newdata = .)
+  ) %>%
+  select(Year, Actual, Pred_Simple, Pred_Poly) %>%
+  pivot_longer(cols = c("Actual", "Pred_Simple", "Pred_Poly"), names_to = "Type", values_to = "Burglary")
+
+ggplot(crime_scooby_preds, aes(x = Year, y = Burglary, color = Type, linetype = Type)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = c(
+    Actual = "black",
+    Pred_Simple = "red",
+    Pred_Poly = "blue"
+  )) +
+  scale_linetype_manual(values = c(
+    Actual = "solid",
+    Pred_Simple = "dashed",
+    Pred_Poly = "dotted"
+  )) +
+  labs(
+    title = "Actual vs Predicted Burglary Over Years",
+    y = "Burglary Rate per 100,000",
+    color = "Legend",
+    linetype = "Legend"
+  ) +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
